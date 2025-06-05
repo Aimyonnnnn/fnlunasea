@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // submissions 컬렉션
+    match /submissions/{docId} {
+      allow create: if true; // 모든 사용자 작성 가능
+      allow read, update, delete: if request.auth != null; // 인증된 사용자만
+    }
+
+    // admins 컬렉션 (관리자 계정 정보 저장소)
+    match /admins/{docId} {
+      allow read, write: if request.auth != null; // 인증된 사용자만
+    }
+  }
+}
+

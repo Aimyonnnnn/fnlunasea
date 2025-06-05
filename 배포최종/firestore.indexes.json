@@ -1,0 +1,18 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "access_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "user_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "access_time",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ]
+}

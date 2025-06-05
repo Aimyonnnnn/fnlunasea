@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>사용자 관리 시스템</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>사용자 관리 시스템</h1>
+        <div class="mb-3">
+            <a href="{{ url_for('add_user') }}" class="btn btn-primary">사용자 추가</a>
+            <a href="{{ url_for('manage_groups') }}" class="btn btn-primary">그룹 관리</a>
+            <a href="{{ url_for('admin_settings') }}" class="btn btn-info">관리자 설정</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-secondary">로그아웃</a>
+        </div>
+        <!-- 검색 및 그룹 필터 -->
+        <form method="POST" class="mb-3">
+            <div class="row">
+                <div class="col-md-4">
+                    <input type="text" class="form-control" name="search_term" placeholder="사용자 이름으로 검색" value="{{ search_term }}">
+                </div>
+                <div class="col-md-4">
+                    <select name="group_id" class="form-select" onchange="this.form.submit()">
+                        <option value="all" {% if selected_group_id == 'all' %}selected{% endif %}>전체 보기</option>
+                        {% for group in groups %}
+                        <option value="{{ group[0] }}" {% if selected_group_id == group[0] %}selected{% endif %}>
+                            {{ group[1] }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary">검색</button>
+                </div>
+            </div>
+        </form>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>사용자 이름</th>
+                    <th>이름</th>
+                    <th>연락처</th>
+                    <th>허용 IP</th>
+                    <th>만료일</th>
+                    <th>그룹</th>
+                    <th>상태</th>
+                    <th>작업</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ user[1] }}</td>
+                    <td>{{ user[6] or '없음' }}</td>
+                    <td>{{ user[7] or '없음' }}</td>
+                    <td>{{ ', '.join(user[2]) if user[2] else '제한 없음' }}</td>
+                    <td>{{ user[3] }}</td>
+                    <td>
+                        {% for group in groups %}
+                            {% if group[0] == user[5] %}
+                                {{ group[1] }}
+                            {% endif %}
+                        {% endfor %}
+                        {% if not user[5] %}
+                            그룹 없음
+                        {% endif %}
+                    </td>
+                    <td>{{ '활성' if user[4] else '비활성' }}</td>
+                    <td>
+                        <a href="{{ url_for('edit_user', user_id=user[0]) }}" class="btn btn-sm btn-warning">편집</a>
+                        <a href="{{ url_for('delete_user', user_id=user[0]) }}" class="btn btn-sm btn-danger" 
+                           onclick="return confirm('정말 삭제하시겠습니까?')">삭제</a>
+                        <a href="{{ url_for('test_access', user_id=user[0]) }}" class="btn btn-sm btn-success">접속 테스트</a>
+                        <a href="{{ url_for('view_logs', user_id=user[0]) }}" class="btn btn-sm btn-info">로그 보기</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

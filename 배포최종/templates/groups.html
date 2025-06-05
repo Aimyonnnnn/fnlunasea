@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>그룹 관리</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>그룹 관리</h1>
+        <a href="{{ url_for('home') }}" class="btn btn-secondary mb-3">홈으로</a>
+        
+        <!-- 그룹 추가 -->
+        <h3>그룹 추가</h3>
+        <form method="POST">
+            <div class="mb-3">
+                <label for="group_name" class="form-label">그룹 이름</label>
+                <input type="text" class="form-control" id="group_name" name="group_name" required>
+            </div>
+            <button type="submit" name="add" class="btn btn-primary">추가</button>
+        </form>
+        
+        <!-- 그룹 목록 -->
+        <h3 class="mt-5">그룹 목록</h3>
+        {% if groups %}
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>그룹 이름</th>
+                    <th>작업</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for group in groups %}
+                <tr>
+                    <td>{{ group[1] }}</td>
+                    <td>
+                        <form method="POST" style="display:inline;">
+                            <input type="hidden" name="group_id" value="{{ group[0] }}">
+                            <button type="submit" name="delete" class="btn btn-sm btn-danger" 
+                                    onclick="return confirm('정말 삭제하시겠습니까?')">삭제</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="alert alert-info">그룹이 없습니다.</div>
+        {% endif %}
+    </div>
+</body>
+</html>

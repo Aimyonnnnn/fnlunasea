@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>사용자 추가</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>사용자 추가</h1>
+        <form method="POST">
+            <div class="mb-3">
+                <label for="username" class="form-label">사용자 이름</label>
+                <input type="text" class="form-control" id="username" name="username" required>
+            </div>
+            <div class="mb-3">
+                <label for="name" class="form-label">이름</label>
+                <input type="text" class="form-control" id="name" name="name">
+            </div>
+            <div class="mb-3">
+                <label for="contact" class="form-label">연락처</label>
+                <input type="text" class="form-control" id="contact" name="contact" placeholder="예: 010-1234-5678">
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">비밀번호</label>
+                <input type="password" class="form-control" id="password" name="password" required>
+            </div>
+            <div class="mb-3">
+                <label for="allowed_ip" class="form-label">허용 IP (콤마로 구분, 예: 192.168.1.1,10.0.0.1)</label>
+                <input type="text" class="form-control" id="allowed_ip" name="allowed_ip" placeholder="예: 192.168.1.1,10.0.0.1">
+            </div>
+            <div class="mb-3">
+                <label for="group_id" class="form-label">그룹</label>
+                <select name="group_id" class="form-select">
+                    <option value="">그룹 없음</option>
+                    {% for group in groups %}
+                    <option value="{{ group[0] }}">{{ group[1] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="days_valid" class="form-label">유효 기간(일, 기본 30)</label>
+                <input type="number" class="form-control" id="days_valid" name="days_valid" value="30" min="1">
+            </div>
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            <button type="submit" class="btn btn-primary">추가</button>
+            <a href="{{ url_for('home') }}" class="btn btn-secondary">취소</a>
+        </form>
+    </div>
+</body>
+</html>
