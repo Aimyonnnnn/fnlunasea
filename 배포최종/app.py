@@ -485,6 +485,23 @@ def api_login():
         logging.error(f"❌ 비밀번호 처리 오류: {e}")
         return jsonify({'success': False, 'message': '비밀번호 처리 오류'}), 500
 
+@app.route('/api/expiry_by_ip', methods=['GET'])
+def expiry_by_ip():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip.split(',')[0].strip() if ip else 'unknown'
+
+    user_docs = db.collection('users').where('allowed_ip', '!=', None).get()
+
+    for doc in user_docs:
+        user = doc.to_dict()
+        allowed_ip_list = json.loads(user.get('allowed_ip') or '[]')
+        if ip in allowed_ip_list:
+            expiry = user.get('expiry_date')
+            return jsonify({'success': True, 'expiry_date': expiry, 'username': user.get('username')})
+
+    return jsonify({'success': False, 'message': f'IP {ip}에 해당하는 사용자 없음'})
+
+
 @app.route('/test_user_login', methods=['GET', 'POST'])
 def test_user_login():
     logging.info("🚀 [test_user_login] 경로 진입")
