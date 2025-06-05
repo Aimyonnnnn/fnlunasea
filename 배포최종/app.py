@@ -21,7 +21,13 @@ load_dotenv()
 cred_json = os.getenv('FIREBASE_CREDENTIALS')
 if not cred_json:
     raise RuntimeError("❌ FIREBASE_CREDENTIALS 환경변수가 설정되지 않았습니다.")
-cred = credentials.Certificate(json.loads(cred_json))
+
+# JSON 파싱 후 private_key의 \\n을 실제 개행문자로 변환
+cred_dict = json.loads(cred_json)
+cred_dict['private_key'] = cred_dict['private_key'].replace('\\n', '\n')
+
+# Firebase 초기화
+cred = credentials.Certificate(cred_dict)
 firebase_admin.initialize_app(cred)
 
 # ✅ Fernet 키 초기화 - 환경변수 기반
