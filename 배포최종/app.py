@@ -116,6 +116,10 @@ def safe_json_loads(data):
     except json.JSONDecodeError:
         return [data] if isinstance(data, str) else []
 
+def get_real_ip(req):
+    ip = req.headers.get('X-Forwarded-For', req.remote_addr)
+    return ip.split(',')[0].strip() if ip else 'unknown'    
+
 # 로그인 페이지
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -158,7 +162,8 @@ def user_login():
         except Exception:
             return render_template('user_login.html', error="만료일 형식 오류")
 
-        ip_address = request.remote_addr or 'unknown'
+        ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+        ip_address = ip_address.split(',')[0].strip() if ip_address else 'unknown'
         logging.info(f"📡 현재 접속한 IP: {ip_address}")
 
         allowed_ip_list = safe_json_loads(user.get('allowed_ip'))
@@ -460,7 +465,7 @@ def api_login():
         logging.error(f"❌ 날짜 파싱 오류: {e}")
         return jsonify({'success': False, 'message': '만료일 형식 오류'}), 500
 
-    ip_address = request.remote_addr or 'unknown'
+    ip_address = get_real_ip(request)
     allowed_ip_list = safe_json_loads(user.get('allowed_ip'))
     logging.info(f"📡 현재 접속한 IP: {ip_address}")
     logging.info(f"📄 허용 IP 목록: {allowed_ip_list}")
@@ -513,7 +518,7 @@ def test_user_login():
             logging.error(f"❌ 날짜 파싱 오류: {e}")
             return render_template('test_user_login.html', error="만료일 형식이 잘못되었습니다.")
 
-        ip_address = request.remote_addr or 'unknown'
+        ip_address = get_real_ip(request)
         allowed_ip_list = safe_json_loads(user.get('allowed_ip'))
         logging.info(f"📡 현재 접속한 IP: {ip_address}")
         logging.info(f"📄 등록된 허용 IP 목록: {allowed_ip_list}")
@@ -546,7 +551,7 @@ def test_access(user_id):
         return redirect(url_for('home'))
     
     user = user_doc.to_dict()
-    ip_address = request.remote_addr or 'unknown'
+    ip_address = get_real_ip(request)
     allowed_ip_list = safe_json_loads(user['allowed_ip'])
     
     if not user['is_active']:
