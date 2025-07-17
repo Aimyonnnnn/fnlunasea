@@ -477,13 +477,115 @@ def api_login():
         stored_password = base64.b64decode(user['password'].encode())
         if bcrypt.checkpw(password.encode(), stored_password):
             logging.info("✅ 비밀번호 일치 - 로그인 성공")
-            return jsonify({'success': True, 'message': '로그인 성공'}), 200
+            
+            # [동시 접속 체크]
+            current_session = user.get('session_token')
+            last_heartbeat = user.get('last_heartbeat')
+            is_active = user.get('is_active_session', False)
+            
+            if current_session and is_active and last_heartbeat:
+                try:
+                    last_time = datetime.fromisoformat(last_heartbeat)
+                    # 마지막 하트비트가 5분 이내면 활성 세션으로 간주
+                    if datetime.now() - last_time < timedelta(minutes=5):
+                        logging.warning(f"❌ 이미 활성 세션 존재: {user_doc.id}")
+                        return jsonify({'success': False, 'message': '이미 다른 곳에서 로그인 중입니다.'}), 409
+                except Exception:
+                    pass  # 날짜 파싱 오류 시 계속 진행
+            
+            # [새 세션 생성]
+            session_token = str(uuid.uuid4())
+            db.collection('users').document(user_doc.id).update({
+                'session_token': session_token,
+                'last_heartbeat': datetime.now().isoformat(),
+                'is_active_session': True
+            })
+            
+            # [로그 기록 추가]
+            db.collection('access_logs').add({
+                'user_id': user_doc.id,
+                'ip_address': ip_address,
+                'access_time': datetime.now().isoformat(),
+                'source': 'api_login'
+            })
+            
+            return jsonify({
+                'success': True, 
+                'message': '로그인 성공',
+                'session_token': session_token
+            }), 200
         else:
             logging.warning("❌ 비밀번호 불일치")
             return jsonify({'success': False, 'message': '비밀번호가 틀렸습니다.'}), 401
     except Exception as e:
         logging.error(f"❌ 비밀번호 처리 오류: {e}")
         return jsonify({'success': False, 'message': '비밀번호 처리 오류'}), 500
+
+@app.route('/api/heartbeat', methods=['POST'])
+def heartbeat():
+    data = request.get_json()
+    session_token = data.get('session_token')
+    
+    if not session_token:
+        return jsonify({'success': False, 'message': '세션 토큰이 필요합니다.'}), 400
+    
+    # 세션 토큰으로 사용자 찾기
+    user_docs = db.collection('users').where('session_token', '==', session_token).limit(1).get()
+    if not user_docs:
+        return jsonify({'success': False, 'message': '유효하지 않은 세션입니다.'}), 401
+    
+    user_doc = user_docs[0]
+    user = user_doc.to_dict()
+    
+    # 계정 상태 체크
+    if not user.get('is_active', True):
+        return jsonify({'success': False, 'message': '비활성화된 계정입니다.'}), 403
+    
+    try:
+        expiry_date = datetime.fromisoformat(user['expiry_date'])
+        if expiry_date < datetime.now():
+            return jsonify({'success': False, 'message': '계정이 만료되었습니다.'}), 403
+    except Exception:
+        return jsonify({'success': False, 'message': '계정 만료일 오류'}), 500
+    
+    # 마지막 하트비트 시간 업데이트
+    try:
+        db.collection('users').document(user_doc.id).update({
+            'last_heartbeat': datetime.now().isoformat(),
+            'is_active_session': True
+        })
+        return jsonify({'success': True, 'message': '하트비트 성공'}), 200
+    except Exception as e:
+        logging.error(f"하트비트 업데이트 실패: {e}")
+        return jsonify({'success': False, 'message': '하트비트 업데이트 실패'}), 500
+
+@app.route('/api/logout', methods=['POST'])
+def api_logout():
+    data = request.get_json()
+    session_token = data.get('session_token')
+    
+    if not session_token:
+        return jsonify({'success': False, 'message': '세션 토큰이 필요합니다.'}), 400
+    
+    # 세션 토큰으로 사용자 찾기
+    user_docs = db.collection('users').where('session_token', '==', session_token).limit(1).get()
+    if not user_docs:
+        return jsonify({'success': False, 'message': '유효하지 않은 세션입니다.'}), 401
+    
+    user_doc = user_docs[0]
+    
+    # 세션 정보 삭제
+    try:
+        db.collection('users').document(user_doc.id).update({
+            'session_token': None,
+            'last_heartbeat': None,
+            'is_active_session': False
+        })
+        logging.info(f"세션 종료: {user_doc.id}")
+        return jsonify({'success': True, 'message': '로그아웃 성공'}), 200
+    except Exception as e:
+        logging.error(f"로그아웃 실패: {e}")
+        return jsonify({'success': False, 'message': '로그아웃 실패'}), 500
 
 @app.route('/api/expiry_by_ip', methods=['GET'])
 def expiry_by_ip():
@@ -548,6 +650,13 @@ def test_user_login():
             stored_password = base64.b64decode(user['password'].encode())
             if bcrypt.checkpw(password.encode(), stored_password):
                 logging.info("✅ 비밀번호 일치")
+                # [로그 기록 추가]
+                db.collection('access_logs').add({
+                    'user_id': user_doc.id,
+                    'ip_address': ip_address,
+                    'access_time': datetime.now().isoformat(),
+                    'source': 'test_user_login'
+                })
                 return render_template('test_user_login.html', success="✅ 로그인 성공!")
             else:
                 logging.warning("❌ 비밀번호 불일치")
