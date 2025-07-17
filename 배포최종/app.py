@@ -432,6 +432,31 @@ def edit_user(user_id):
     
     return render_template('edit.html', user=user_data, allowed_ip=allowed_ip_str, groups=groups, error=None)
 
+# 강제 로그아웃
+@app.route('/force_logout/<user_id>')
+@login_required
+def force_logout(user_id):
+    user_doc = db.collection('users').document(user_id).get()
+    if not user_doc.exists:
+        flash("사용자를 찾을 수 없습니다.", "danger")
+        return redirect(url_for('home'))
+    
+    try:
+        # 세션 정보 강제 삭제
+        db.collection('users').document(user_id).update({
+            'session_token': None,
+            'last_heartbeat': None,
+            'is_active_session': False
+        })
+        username = user_doc.to_dict().get('username', 'Unknown')
+        flash(f"'{username}' 강제 로그아웃 완료!", "success")
+        logging.info(f"✅ 강제 로그아웃: {user_id}")
+    except Exception as e:
+        flash(f"강제 로그아웃 실패: {e}", "danger")
+        logging.error(f"❌ 강제 로그아웃 실패: {e}")
+    
+    return redirect(url_for('home'))
+
 @app.route('/api/login', methods=['POST'])
 def api_login():
     logging.info("🚀 [API LOGIN] JSON 요청 수신")
@@ -486,8 +511,8 @@ def api_login():
             if current_session and is_active and last_heartbeat:
                 try:
                     last_time = datetime.fromisoformat(last_heartbeat)
-                    # 마지막 하트비트가 5분 이내면 활성 세션으로 간주
-                    if datetime.now() - last_time < timedelta(minutes=5):
+                    # 마지막 하트비트가 20초 이내면 활성 세션으로 간주
+                    if datetime.now() - last_time < timedelta(seconds=20):
                         logging.warning(f"❌ 이미 활성 세션 존재: {user_doc.id}")
                         return jsonify({'success': False, 'message': '이미 다른 곳에서 로그인 중입니다.'}), 409
                 except Exception:
