@@ -193,6 +193,68 @@ def user_login():
 
     return render_template('user_login.html', error=None, success=None)
 
+# 사용자 셀프 비밀번호 변경 페이지
+@app.route('/user_password', methods=['GET', 'POST'])
+def user_password_change():
+    if request.method == 'POST':
+        username = request.form['username']
+        current_password = request.form['current_password']
+        new_password = request.form['new_password']
+        confirm_password = request.form['confirm_password']
+
+        # 입력 검증
+        if not all([username, current_password, new_password, confirm_password]):
+            return render_template('user_password.html', error="모든 필드를 입력해주세요.")
+        
+        if new_password != confirm_password:
+            return render_template('user_password.html', error="새 비밀번호가 일치하지 않습니다.")
+        
+        if len(new_password) < 6:
+            return render_template('user_password.html', error="새 비밀번호는 최소 6자 이상이어야 합니다.")
+
+        # 사용자 찾기
+        user_docs = db.collection('users').where('username', '==', username).limit(1).get()
+        if not user_docs:
+            return render_template('user_password.html', error="사용자를 찾을 수 없습니다.")
+
+        user_doc = user_docs[0]
+        user = user_doc.to_dict()
+
+        # 계정 상태 확인
+        if not user.get('is_active', True):
+            return render_template('user_password.html', error="비활성화된 계정입니다.")
+
+        try:
+            expiry_date = datetime.fromisoformat(user['expiry_date'])
+            if expiry_date < datetime.now():
+                return render_template('user_password.html', error="만료된 계정입니다.")
+        except Exception:
+            return render_template('user_password.html', error="계정 만료일 오류")
+
+        # 현재 비밀번호 확인
+        try:
+            stored_password = base64.b64decode(user['password'].encode())
+            if not bcrypt.checkpw(current_password.encode(), stored_password):
+                return render_template('user_password.html', error="현재 비밀번호가 틀렸습니다.")
+        except Exception as e:
+            return render_template('user_password.html', error="비밀번호 확인 중 오류가 발생했습니다.")
+
+        # 새 비밀번호 저장
+        try:
+            hashed_new_password = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
+            hashed_base64 = base64.b64encode(hashed_new_password).decode()
+            
+            db.collection('users').document(user_doc.id).update({
+                'password': hashed_base64
+            })
+            
+            return render_template('user_password.html', success="비밀번호가 성공적으로 변경되었습니다!")
+        except Exception as e:
+            logging.error(f"비밀번호 변경 실패: {e}")
+            return render_template('user_password.html', error="비밀번호 변경 중 오류가 발생했습니다.")
+
+    return render_template('user_password.html', error=None, success=None)
+
 # 로그아웃
 @app.route('/logout')
 def logout():
@@ -282,8 +344,25 @@ def home():
         query = query.where('group_id', '==', selected_group_id)
     
     users = []
+    current_time = datetime.now()
+    
     for doc in query.get():
         data = doc.to_dict()
+        
+        # 로그인 상태 확인
+        is_logged_in = False
+        last_heartbeat = data.get('last_heartbeat')
+        is_active_session = data.get('is_active_session', False)
+        
+        if last_heartbeat and is_active_session:
+            try:
+                last_time = datetime.fromisoformat(last_heartbeat)
+                # 20초 이내면 로그인 중으로 간주
+                if current_time - last_time < timedelta(seconds=20):
+                    is_logged_in = True
+            except Exception:
+                pass
+        
         users.append((
             doc.id,
             data.get('username'),
@@ -292,7 +371,9 @@ def home():
             data.get('is_active'),
             data.get('group_id'),
             data.get('name'),
-            data.get('contact')
+            data.get('contact'),
+            is_logged_in,  # 새로 추가된 로그인 상태
+            last_heartbeat  # 마지막 접속 시간
         ))
     
     return render_template('index.html', users=users, groups=groups, selected_group_id=selected_group_id, search_term=search_term)
@@ -514,7 +595,10 @@ def api_login():
                     # 마지막 하트비트가 20초 이내면 활성 세션으로 간주
                     if datetime.now() - last_time < timedelta(seconds=20):
                         logging.warning(f"❌ 이미 활성 세션 존재: {user_doc.id}")
-                        return jsonify({'success': False, 'message': '이미 다른 곳에서 로그인 중입니다.'}), 409
+                        return jsonify({
+                            'success': False, 
+                            'message': '해당 계정은 중복 로그인이 안됩니다.\n만약 중복 사용이 아닌데 20초가 지나도\n재로그인이 안될 시 관리자에게 문의 주세요!'
+                        }), 409
                 except Exception:
                     pass  # 날짜 파싱 오류 시 계속 진행
             
@@ -545,6 +629,71 @@ def api_login():
     except Exception as e:
         logging.error(f"❌ 비밀번호 처리 오류: {e}")
         return jsonify({'success': False, 'message': '비밀번호 처리 오류'}), 500
+
+# 계정 만료 알림 체크 API
+@app.route('/api/check_expiry', methods=['POST'])
+def check_expiry():
+    data = request.get_json()
+    username = data.get('username')
+    
+    if not username:
+        return jsonify({'success': False, 'message': '사용자명이 필요합니다.'}), 400
+    
+    # 사용자 찾기
+    user_docs = db.collection('users').where('username', '==', username).limit(1).get()
+    if not user_docs:
+        return jsonify({'success': False, 'message': '사용자를 찾을 수 없습니다.'}), 404
+    
+    user_doc = user_docs[0]
+    user = user_doc.to_dict()
+    
+    try:
+        expiry_date = datetime.fromisoformat(user['expiry_date'])
+        current_date = datetime.now()
+        
+        # 만료까지 남은 일수 계산
+        days_left = (expiry_date - current_date).days
+        
+        # 알림 조건 (3일 이하 남았을 때)
+        if days_left <= 3 and days_left >= 0:
+            if days_left == 0:
+                message = "⚠️ 계정이 오늘 만료됩니다!"
+                urgency = "critical"
+            elif days_left == 1:
+                message = "⚠️ 계정이 내일 만료됩니다!"
+                urgency = "high"
+            else:
+                message = f"⚠️ 계정이 {days_left}일 후 만료됩니다!"
+                urgency = "medium"
+            
+            return jsonify({
+                'success': True,
+                'show_alert': True,
+                'message': message,
+                'days_left': days_left,
+                'expiry_date': expiry_date.strftime('%Y년 %m월 %d일'),
+                'urgency': urgency
+            }), 200
+        elif days_left < 0:
+            return jsonify({
+                'success': True,
+                'show_alert': True,
+                'message': "❌ 계정이 만료되었습니다!",
+                'days_left': days_left,
+                'expiry_date': expiry_date.strftime('%Y년 %m월 %d일'),
+                'urgency': "expired"
+            }), 200
+        else:
+            return jsonify({
+                'success': True,
+                'show_alert': False,
+                'days_left': days_left,
+                'expiry_date': expiry_date.strftime('%Y년 %m월 %d일')
+            }), 200
+            
+    except Exception as e:
+        logging.error(f"만료일 체크 오류: {e}")
+        return jsonify({'success': False, 'message': '만료일 확인 중 오류가 발생했습니다.'}), 500
 
 @app.route('/api/heartbeat', methods=['POST'])
 def heartbeat():
@@ -761,6 +910,222 @@ def delete_all_logs(user_id):
         db.collection('access_logs').document(log.id).delete()
     flash("모든 로그 삭제 완료!", "success")
     return redirect(url_for('view_logs', user_id=user_id))
+
+# 접속 통계 대시보드
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    try:
+        # 전체 사용자 수
+        total_users = len(db.collection('users').get())
+        
+        # 활성 사용자 수
+        active_users = len(db.collection('users').where('is_active', '==', True).get())
+        
+        # 현재 로그인 중인 사용자 수
+        current_time = datetime.now()
+        logged_in_count = 0
+        all_users = db.collection('users').get()
+        
+        for doc in all_users:
+            data = doc.to_dict()
+            last_heartbeat = data.get('last_heartbeat')
+            is_active_session = data.get('is_active_session', False)
+            
+            if last_heartbeat and is_active_session:
+                try:
+                    last_time = datetime.fromisoformat(last_heartbeat)
+                    if current_time - last_time < timedelta(seconds=20):
+                        logged_in_count += 1
+                except Exception:
+                    pass
+        
+        # 오늘 접속 로그 수
+        today = datetime.now().date()
+        today_start = datetime.combine(today, datetime.min.time()).isoformat()
+        today_logs = db.collection('access_logs').where('access_time', '>=', today_start).get()
+        today_access_count = len(today_logs)
+        
+        # 일주일 간 일별 접속 통계
+        weekly_stats = []
+        for i in range(7):
+            day = today - timedelta(days=i)
+            day_start = datetime.combine(day, datetime.min.time()).isoformat()
+            day_end = datetime.combine(day, datetime.max.time()).isoformat()
+            
+            day_logs = db.collection('access_logs')\
+                .where('access_time', '>=', day_start)\
+                .where('access_time', '<=', day_end).get()
+            
+            weekly_stats.append({
+                'date': day.strftime('%m/%d'),
+                'count': len(day_logs)
+            })
+        
+        weekly_stats.reverse()  # 오래된 날짜부터
+        
+        # 최근 접속 로그 (최신 10개)
+        recent_logs = []
+        logs = db.collection('access_logs')\
+            .order_by('access_time', direction=firestore.Query.DESCENDING)\
+            .limit(10).get()
+        
+        for log in logs:
+            log_data = log.to_dict()
+            user_id = log_data.get('user_id')
+            
+            # 사용자 이름 가져오기
+            username = 'Unknown'
+            try:
+                user_doc = db.collection('users').document(user_id).get()
+                if user_doc.exists:
+                    username = user_doc.to_dict().get('username', 'Unknown')
+            except Exception:
+                pass
+            
+            recent_logs.append({
+                'username': username,
+                'ip_address': log_data.get('ip_address'),
+                'access_time': log_data.get('access_time'),
+                'source': log_data.get('source')
+            })
+        
+        stats = {
+            'total_users': total_users,
+            'active_users': active_users,
+            'logged_in_users': logged_in_count,
+            'today_access_count': today_access_count,
+            'weekly_stats': weekly_stats,
+            'recent_logs': recent_logs
+        }
+        
+        return render_template('dashboard.html', stats=stats)
+        
+    except Exception as e:
+        logging.error(f"대시보드 오류: {e}")
+        flash("통계 데이터를 불러오는 중 오류가 발생했습니다.", "danger")
+        return redirect(url_for('home'))
+
+# 관리자에게 메시지 남기기 페이지
+@app.route('/user_message', methods=['GET', 'POST'])
+def user_message():
+    if request.method == 'POST':
+        username = request.form['username']
+        message_content = request.form['message']
+        contact_info = request.form.get('contact_info', '')
+
+        # 입력 검증
+        if not all([username, message_content]):
+            return render_template('user_message.html', error="사용자명과 메시지를 모두 입력해주세요.")
+        
+        if len(message_content) > 500:
+            return render_template('user_message.html', error="메시지는 500자 이하로 입력해주세요.")
+
+        # 사용자 존재 여부 확인 (선택사항)
+        user_docs = db.collection('users').where('username', '==', username).limit(1).get()
+        user_exists = len(user_docs) > 0
+
+        try:
+            # 메시지 저장
+            message_id = str(uuid.uuid4())
+            db.collection('user_messages').document(message_id).set({
+                'username': username,
+                'message': message_content,
+                'contact_info': contact_info,
+                'user_exists': user_exists,
+                'created_at': datetime.now().isoformat(),
+                'status': 'unread',  # unread, read, replied
+                'admin_reply': None,
+                'replied_at': None
+            })
+            
+            return render_template('user_message.html', success="메시지가 관리자에게 전달되었습니다!")
+        except Exception as e:
+            logging.error(f"메시지 저장 실패: {e}")
+            return render_template('user_message.html', error="메시지 전송 중 오류가 발생했습니다.")
+
+    return render_template('user_message.html', error=None, success=None)
+
+# 관리자 메시지 관리 페이지
+@app.route('/admin_messages')
+@login_required
+def admin_messages():
+    try:
+        # 모든 메시지 가져오기 (최신 순)
+        messages = []
+        message_docs = db.collection('user_messages')\
+            .order_by('created_at', direction=firestore.Query.DESCENDING).get()
+
+        for doc in message_docs:
+            data = doc.to_dict()
+            messages.append({
+                'id': doc.id,
+                'username': data.get('username'),
+                'message': data.get('message'),
+                'contact_info': data.get('contact_info'),
+                'user_exists': data.get('user_exists', False),
+                'created_at': data.get('created_at'),
+                'status': data.get('status', 'unread'),
+                'admin_reply': data.get('admin_reply'),
+                'replied_at': data.get('replied_at')
+            })
+
+        return render_template('admin_messages.html', messages=messages)
+    except Exception as e:
+        logging.error(f"메시지 목록 조회 실패: {e}")
+        flash("메시지 목록을 불러오는 중 오류가 발생했습니다.", "danger")
+        return redirect(url_for('home'))
+
+# 메시지 상태 변경 (읽음 처리)
+@app.route('/message_read/<message_id>')
+@login_required
+def message_read(message_id):
+    try:
+        db.collection('user_messages').document(message_id).update({
+            'status': 'read'
+        })
+        flash("메시지를 읽음 처리했습니다.", "success")
+    except Exception as e:
+        logging.error(f"메시지 상태 변경 실패: {e}")
+        flash("메시지 상태 변경 중 오류가 발생했습니다.", "danger")
+    
+    return redirect(url_for('admin_messages'))
+
+# 메시지 답변
+@app.route('/message_reply/<message_id>', methods=['POST'])
+@login_required
+def message_reply(message_id):
+    admin_reply = request.form.get('admin_reply', '').strip()
+    
+    if not admin_reply:
+        flash("답변 내용을 입력해주세요.", "danger")
+        return redirect(url_for('admin_messages'))
+    
+    try:
+        db.collection('user_messages').document(message_id).update({
+            'admin_reply': admin_reply,
+            'replied_at': datetime.now().isoformat(),
+            'status': 'replied'
+        })
+        flash("답변을 저장했습니다.", "success")
+    except Exception as e:
+        logging.error(f"답변 저장 실패: {e}")
+        flash("답변 저장 중 오류가 발생했습니다.", "danger")
+    
+    return redirect(url_for('admin_messages'))
+
+# 메시지 삭제
+@app.route('/message_delete/<message_id>')
+@login_required
+def message_delete(message_id):
+    try:
+        db.collection('user_messages').document(message_id).delete()
+        flash("메시지를 삭제했습니다.", "success")
+    except Exception as e:
+        logging.error(f"메시지 삭제 실패: {e}")
+        flash("메시지 삭제 중 오류가 발생했습니다.", "danger")
+    
+    return redirect(url_for('admin_messages'))
 
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
