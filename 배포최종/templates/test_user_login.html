@@ -5,25 +5,191 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
-<div class="container mt-5">
-    <h1>테스트 사용자 로그인</h1>
-    <form method="POST" action="/test_user_login">
-        <div class="mb-3">
-            <label for="username" class="form-label">아이디</label>
-            <input type="text" class="form-control" id="username" name="username" required>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header text-center">
+                        <h3>🧪 테스트 사용자 로그인</h3>
+                    </div>
+                    <div class="card-body">
+                        {% if error %}
+                            <div class="alert alert-danger">{{ error }}</div>
+                        {% endif %}
+                        {% if success %}
+                            <div class="alert alert-success">{{ success }}</div>
+                        {% endif %}
+                        
+                        <form method="POST" id="loginForm">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">아이디</label>
+                                <input type="text" class="form-control" id="username" name="username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="password" class="form-label">비밀번호</label>
+                                <input type="password" class="form-control" id="password" name="password" required>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">로그인</button>
+                                <button type="button" class="btn btn-info" onclick="checkExpiry()">📅 만료일 확인</button>
+                                <a href="{{ url_for('user_password_change') }}" class="btn btn-warning">🔐 비밀번호 변경</a>
+                                <a href="{{ url_for('user_message') }}" class="btn btn-success">💬 관리자에게 메시지</a>
+                                <a href="{{ url_for('user_login') }}" class="btn btn-secondary">← 일반 로그인</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- 안내 사항 -->
+                <div class="mt-4">
+                    <div class="alert alert-info">
+                        <h6>📋 테스트 기능</h6>
+                        <ul class="mb-0">
+                            <li><strong>만료일 확인</strong>: 계정 만료까지 남은 일수 확인</li>
+                            <li><strong>비밀번호 변경</strong>: 셀프 비밀번호 변경</li>
+                            <li><strong>만료 알림</strong>: D-3일부터 자동 알림</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="mb-3">
-            <label for="password" class="form-label">비밀번호</label>
-            <input type="password" class="form-control" id="password" name="password" required>
+    </div>
+
+    <!-- 만료 알림 모달 -->
+    <div class="modal fade" id="expiryModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header" id="modalHeader">
+                    <h5 class="modal-title">계정 만료 알림</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modalBody">
+                    <!-- 동적으로 채워질 내용 -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">확인</button>
+                    <button type="button" class="btn btn-primary" onclick="location.href='{{ url_for('user_password_change') }}'">비밀번호 변경</button>
+                </div>
+            </div>
         </div>
-        {% if error %}
-        <div class="alert alert-danger">{{ error }}</div>
-        {% endif %}
-        {% if success %}
-        <div class="alert alert-success">{{ success }}</div>
-        {% endif %}
-        <button type="submit" class="btn btn-primary">로그인</button>
-    </form>
-</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 페이지 로드 시 자동으로 만료일 체크
+        window.addEventListener('load', function() {
+            const username = document.getElementById('username').value;
+            if (username) {
+                checkExpiry();
+            }
+        });
+
+        // 로그인 폼 제출 시 만료일 체크
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            checkExpiryBeforeLogin();
+        });
+
+        function checkExpiry() {
+            const username = document.getElementById('username').value;
+            if (!username) {
+                alert('아이디를 입력해주세요.');
+                return;
+            }
+
+            fetch('/api/check_expiry', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({username: username})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.show_alert) {
+                        showExpiryModal(data);
+                    } else {
+                        alert(`✅ 계정 상태: 정상\n만료일: ${data.expiry_date}\n남은 일수: ${data.days_left}일`);
+                    }
+                } else {
+                    alert('오류: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('만료일 확인 중 오류가 발생했습니다.');
+            });
+        }
+
+        function checkExpiryBeforeLogin() {
+            const username = document.getElementById('username').value;
+            
+            fetch('/api/check_expiry', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({username: username})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.show_alert && data.urgency === 'expired') {
+                    showExpiryModal(data);
+                } else {
+                    // 만료되지 않았으면 로그인 진행
+                    document.getElementById('loginForm').submit();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                // 오류 시에도 로그인 진행
+                document.getElementById('loginForm').submit();
+            });
+        }
+
+        function showExpiryModal(data) {
+            const modal = new bootstrap.Modal(document.getElementById('expiryModal'));
+            const modalHeader = document.getElementById('modalHeader');
+            const modalBody = document.getElementById('modalBody');
+
+            // 긴급도에 따른 스타일링
+            let headerClass = 'modal-header';
+            let alertClass = 'alert';
+            
+            switch(data.urgency) {
+                case 'expired':
+                    headerClass += ' bg-danger text-white';
+                    alertClass += ' alert-danger';
+                    break;
+                case 'critical':
+                    headerClass += ' bg-warning text-dark';
+                    alertClass += ' alert-warning';
+                    break;
+                case 'high':
+                    headerClass += ' bg-warning text-dark';
+                    alertClass += ' alert-warning';
+                    break;
+                case 'medium':
+                    headerClass += ' bg-info text-white';
+                    alertClass += ' alert-info';
+                    break;
+            }
+
+            modalHeader.className = headerClass;
+            
+            modalBody.innerHTML = `
+                <div class="${alertClass}">
+                    <h6>${data.message}</h6>
+                    <hr>
+                    <p><strong>만료일:</strong> ${data.expiry_date}</p>
+                    <p><strong>남은 일수:</strong> ${data.days_left}일</p>
+                    ${data.urgency !== 'expired' ? '<p>계속 사용하려면 관리자에게 연장을 요청하세요.</p>' : '<p>계정이 만료되어 로그인할 수 없습니다.</p>'}
+                </div>
+            `;
+
+            modal.show();
+        }
+    </script>
 </body>
 </html>

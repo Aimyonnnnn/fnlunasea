@@ -10,6 +10,8 @@
         <div class="mb-3">
             <a href="{{ url_for('add_user') }}" class="btn btn-primary">사용자 추가</a>
             <a href="{{ url_for('manage_groups') }}" class="btn btn-primary">그룹 관리</a>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-success">📊 접속 통계</a>
+            <a href="{{ url_for('admin_messages') }}" class="btn btn-info">💬 메시지 관리</a>
             <a href="{{ url_for('admin_settings') }}" class="btn btn-info">관리자 설정</a>
             <a href="{{ url_for('logout') }}" class="btn btn-secondary">로그아웃</a>
         </div>
@@ -51,6 +53,7 @@
                     <th>만료일</th>
                     <th>그룹</th>
                     <th>상태</th>
+                    <th>로그인 상태</th>
                     <th>작업</th>
                 </tr>
             </thead>
@@ -74,11 +77,23 @@
                     </td>
                     <td>{{ '활성' if user[4] else '비활성' }}</td>
                     <td>
+                        {% if user[8] %}
+                            <span style="color:#28A745;font-weight:bold;font-size:18px;">🟢 로그인 중</span>
+                            <br><small class="text-muted">{{ user[9][:19] if user[9] else '' }}</small>
+                        {% else %}
+                            <span style="color:#888;font-weight:bold;font-size:18px;">⚪ 오프라인</span>
+                        {% endif %}
+                    </td>
+                    <td>
                         <a href="{{ url_for('edit_user', user_id=user[0]) }}" class="btn btn-sm btn-warning">편집</a>
                         <a href="{{ url_for('delete_user', user_id=user[0]) }}" class="btn btn-sm btn-danger" 
                            onclick="return confirm('정말 삭제하시겠습니까?')">삭제</a>
                         <a href="{{ url_for('test_access', user_id=user[0]) }}" class="btn btn-sm btn-success">접속 테스트</a>
                         <a href="{{ url_for('view_logs', user_id=user[0]) }}" class="btn btn-sm btn-info">로그 보기</a>
+                        {% if user[8] %}
+                            <a href="{{ url_for('force_logout', user_id=user[0]) }}" class="btn btn-sm btn-secondary" 
+                               onclick="return confirm('{{ user[1] }} 사용자를 강제 로그아웃 하시겠습니까?')">강제 로그아웃</a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

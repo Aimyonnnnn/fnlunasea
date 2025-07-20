@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>사용자 메시지 관리</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>💬 사용자 메시지 관리</h1>
+            <a href="{{ url_for('home') }}" class="btn btn-secondary">← 메인으로</a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- 통계 요약 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card text-center bg-danger text-white">
+                    <div class="card-body">
+                        <h5>읽지 않음</h5>
+                        <h3>{{ messages | selectattr('status', 'equalto', 'unread') | list | length }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center bg-warning text-dark">
+                    <div class="card-body">
+                        <h5>읽음</h5>
+                        <h3>{{ messages | selectattr('status', 'equalto', 'read') | list | length }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center bg-success text-white">
+                    <div class="card-body">
+                        <h5>답변 완료</h5>
+                        <h3>{{ messages | selectattr('status', 'equalto', 'replied') | list | length }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center bg-info text-white">
+                    <div class="card-body">
+                        <h5>전체</h5>
+                        <h3>{{ messages | length }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 메시지 목록 -->
+        {% if messages %}
+            <div class="card">
+                <div class="card-header">
+                    <h5>📋 메시지 목록</h5>
+                </div>
+                <div class="card-body p-0">
+                    {% for message in messages %}
+                    <div class="border-bottom p-3 {% if message.status == 'unread' %}bg-light{% endif %}">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="d-flex align-items-center mb-2">
+                                    <strong class="me-3">{{ message.username }}</strong>
+                                    
+                                    {% if message.status == 'unread' %}
+                                        <span class="badge bg-danger">읽지 않음</span>
+                                    {% elif message.status == 'read' %}
+                                        <span class="badge bg-warning">읽음</span>
+                                    {% elif message.status == 'replied' %}
+                                        <span class="badge bg-success">답변 완료</span>
+                                    {% endif %}
+                                    
+                                    {% if message.user_exists %}
+                                        <span class="badge bg-primary ms-2">등록된 사용자</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary ms-2">미등록 사용자</span>
+                                    {% endif %}
+                                    
+                                    <small class="text-muted ms-auto">{{ message.created_at[:19] }}</small>
+                                </div>
+                                
+                                {% if message.contact_info %}
+                                    <div class="mb-2">
+                                        <small class="text-muted">📞 연락처: {{ message.contact_info }}</small>
+                                    </div>
+                                {% endif %}
+                                
+                                <div class="mb-2">
+                                    <p class="mb-1">{{ message.message }}</p>
+                                </div>
+                                
+                                {% if message.admin_reply %}
+                                    <div class="bg-success bg-opacity-10 p-2 rounded">
+                                        <small class="text-muted">✅ 관리자 답변 ({{ message.replied_at[:19] }}):</small>
+                                        <p class="mb-0">{{ message.admin_reply }}</p>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div class="d-grid gap-2">
+                                    {% if message.status == 'unread' %}
+                                        <a href="{{ url_for('message_read', message_id=message.id) }}" 
+                                           class="btn btn-sm btn-warning">👁️ 읽음 처리</a>
+                                    {% endif %}
+                                    
+                                    {% if message.status != 'replied' %}
+                                        <button class="btn btn-sm btn-success" data-bs-toggle="collapse" 
+                                                data-bs-target="#reply-{{ message.id }}">💬 답변하기</button>
+                                    {% endif %}
+                                    
+                                    <a href="{{ url_for('message_delete', message_id=message.id) }}" 
+                                       class="btn btn-sm btn-danger"
+                                       onclick="return confirm('정말 삭제하시겠습니까?')">🗑️ 삭제</a>
+                                </div>
+                                
+                                <!-- 답변 폼 -->
+                                {% if message.status != 'replied' %}
+                                <div class="collapse mt-3" id="reply-{{ message.id }}">
+                                    <form method="POST" action="{{ url_for('message_reply', message_id=message.id) }}">
+                                        <div class="mb-3">
+                                            <label class="form-label">관리자 답변</label>
+                                            <textarea class="form-control" name="admin_reply" rows="3" 
+                                                      placeholder="사용자에게 전달할 답변을 입력하세요..." required></textarea>
+                                        </div>
+                                        <div class="d-grid gap-2">
+                                            <button type="submit" class="btn btn-sm btn-primary">📤 답변 전송</button>
+                                        </div>
+                                    </form>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% else %}
+            <div class="alert alert-info text-center">
+                <h5>📭 메시지가 없습니다</h5>
+                <p class="mb-0">아직 사용자가 보낸 메시지가 없습니다.</p>
+            </div>
+        {% endif %}
+
+        <!-- 안내 사항 -->
+        <div class="mt-4">
+            <div class="alert alert-info">
+                <h6>📋 메시지 관리 안내</h6>
+                <ul class="mb-0">
+                    <li><strong>읽지 않음</strong>: 새로 도착한 메시지</li>
+                    <li><strong>읽음</strong>: 확인했지만 아직 답변하지 않은 메시지</li>
+                    <li><strong>답변 완료</strong>: 사용자에게 답변을 보낸 메시지</li>
+                    <li><strong>등록된 사용자</strong>: 시스템에 등록된 사용자의 메시지</li>
+                    <li><strong>미등록 사용자</strong>: 시스템에 없는 사용자명으로 보낸 메시지</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 
