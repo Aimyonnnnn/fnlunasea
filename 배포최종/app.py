@@ -357,8 +357,8 @@ def home():
         if last_heartbeat and is_active_session:
             try:
                 last_time = datetime.fromisoformat(last_heartbeat)
-                # 20초 이내면 로그인 중으로 간주
-                if current_time - last_time < timedelta(seconds=20):
+                # 5분 10초 이내면 로그인 중으로 간주 (세션 만료 기준)
+                if current_time - last_time < timedelta(seconds=310):
                     is_logged_in = True
             except Exception:
                 pass
@@ -592,12 +592,12 @@ def api_login():
             if current_session and is_active and last_heartbeat:
                 try:
                     last_time = datetime.fromisoformat(last_heartbeat)
-                    # 마지막 하트비트가 20초 이내면 활성 세션으로 간주
-                    if datetime.now() - last_time < timedelta(seconds=20):
+                    # 마지막 하트비트가 5분 10초 이내면 활성 세션으로 간주
+                    if datetime.now() - last_time < timedelta(seconds=310):
                         logging.warning(f"❌ 이미 활성 세션 존재: {user_doc.id}")
                         return jsonify({
                             'success': False, 
-                            'message': '해당 계정은 중복 로그인이 안됩니다.\n만약 중복 사용이 아닌데 20초가 지나도\n재로그인이 안될 시 관리자에게 문의 주세요!'
+                            'message': '해당 계정은 중복 로그인이 안됩니다.\n잠시 후 다시 시도해주세요.'
                         }), 409
                 except Exception:
                     pass  # 날짜 파싱 오류 시 계속 진행
@@ -935,7 +935,7 @@ def dashboard():
             if last_heartbeat and is_active_session:
                 try:
                     last_time = datetime.fromisoformat(last_heartbeat)
-                    if current_time - last_time < timedelta(seconds=20):
+                    if current_time - last_time < timedelta(seconds=310):  # 세션 만료 기준
                         logged_in_count += 1
                 except Exception:
                     pass
