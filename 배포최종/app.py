@@ -357,8 +357,8 @@ def home():
         if last_heartbeat and is_active_session:
             try:
                 last_time = datetime.fromisoformat(last_heartbeat)
-                # 5분 10초 이내면 로그인 중으로 간주 (세션 만료 기준)
-                if current_time - last_time < timedelta(seconds=310):
+                # 20초 이내면 로그인 중으로 간주
+                if current_time - last_time < timedelta(seconds=20):
                     is_logged_in = True
             except Exception:
                 pass
@@ -592,8 +592,8 @@ def api_login():
             if current_session and is_active and last_heartbeat:
                 try:
                     last_time = datetime.fromisoformat(last_heartbeat)
-                    # 마지막 하트비트가 5분 10초 이내면 활성 세션으로 간주
-                    if datetime.now() - last_time < timedelta(seconds=310):
+                    # 마지막 하트비트가 20초 이내면 활성 세션으로 간주
+                    if datetime.now() - last_time < timedelta(seconds=20):
                         logging.warning(f"❌ 이미 활성 세션 존재: {user_doc.id}")
                         return jsonify({
                             'success': False, 
@@ -722,16 +722,8 @@ def heartbeat():
     except Exception:
         return jsonify({'success': False, 'message': '계정 만료일 오류'}), 500
     
-    # 마지막 하트비트 시간 업데이트
-    try:
-        db.collection('users').document(user_doc.id).update({
-            'last_heartbeat': datetime.now().isoformat(),
-            'is_active_session': True
-        })
-        return jsonify({'success': True, 'message': '하트비트 성공'}), 200
-    except Exception as e:
-        logging.error(f"하트비트 업데이트 실패: {e}")
-        return jsonify({'success': False, 'message': '하트비트 업데이트 실패'}), 500
+    # 하트비트 성공 응답 (Firebase 저장하지 않음 - 리소스 절약)
+    return jsonify({'success': True, 'message': '하트비트 성공'}), 200
 
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
@@ -935,7 +927,7 @@ def dashboard():
             if last_heartbeat and is_active_session:
                 try:
                     last_time = datetime.fromisoformat(last_heartbeat)
-                    if current_time - last_time < timedelta(seconds=310):  # 세션 만료 기준
+                    if current_time - last_time < timedelta(seconds=20):
                         logged_in_count += 1
                 except Exception:
                     pass
